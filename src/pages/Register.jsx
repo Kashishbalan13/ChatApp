@@ -1,9 +1,17 @@
-import React from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase";
+import React, { useState } from "react";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth, storage, db } from "../firebase";
 import OIP from "../img/OIP.jpg";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { doc, setDoc } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
+
+// ... (import statements)
 
 const Register = () => {
+  const [err, setErr] = useState(false);
+  const navigate = useNavigate();
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const displayName = e.target[0].value;
@@ -11,19 +19,37 @@ const Register = () => {
     const password = e.target[2].value;
     const file = e.target[3].files[0];
 
-    createUserWithEmailAndPassword(auth, email, password)
-      .then((userCredential) => {
-        // Signed up
-        const user = userCredential.user;
+    try {
+      const res = await createUserWithEmailAndPassword(auth, email, password);
+      const storageRef = ref(storage, displayName);
 
-        console.log(user);
-        // ...
-      })
-      .catch((error) => {
-        const errorCode = error.code;
-        const errorMessage = error.message;
-        // ..
-      });
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on(
+        (error) => {
+          setErr(true);
+        },
+        () => {
+          getDownloadURL(uploadTask.snapshot.ref).then(async (downloadURL) => {
+            await updateProfile(res.user, {
+              displayName: displayName,
+              photoURL: downloadURL,
+            });
+            await setDoc(doc(db, "users", res.user.uid), {
+              uid: res.user.uid,
+              displayName,
+              email,
+              photoURL: downloadURL,
+            });
+
+            await setDoc(doc(db, "userChats", res.user.uid), {});
+            navigate("/");
+          });
+        }
+      );
+    } catch (err) {
+      setErr(true);
+    }
   };
 
   return (
@@ -35,15 +61,17 @@ const Register = () => {
           <input type="text" placeholder="display name" />
           <input type="email" placeholder="email" />
           <input type="password" placeholder="password" />
-          <input style={{ display: "none" }} type="file" id="file" />
-          <input type="file" />
-          <label htmlFor="file">
-            <img src={OIP} alt=""></img>
+          <input type="file" id="avatar" />
+          <label htmlFor="avatar">
+            <img src={OIP} alt="" />
             <span>Add an Avatar</span>
           </label>
-          <button>Sign Up</button>
+          <button type="submit">Sign Up</button>
+          {err && <span>Something went wrong</span>}
         </form>
-        <p>You do have an account? Login</p>
+        <p>
+          You do have an account? <Link to="/Login">Login</Link>
+        </p>
       </div>
     </div>
   );
